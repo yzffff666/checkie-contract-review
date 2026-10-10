@@ -9,7 +9,7 @@ def load_rules():
     return json.loads(RULES_PATH.read_text(encoding="utf-8"))
 
 
-def review_text(text, rules=None):
+def review_text(text, rules=None, llm_fallback=None):
     if not isinstance(text, str) or not text.strip():
         raise ValueError("合同文本不能为空")
     rules = load_rules() if rules is None else rules
@@ -57,4 +57,46 @@ def review_text(text, rules=None):
         evidences = [{"text": text[start:end], "start": start, "end": end} for start, end in hits]
         reason = "; ".join(reasons) if reasons else ("发现配置的匹配内容" if hits else "未找到明确约定，建议人工确认")
         output.append({"rule_id": rule["id"], "rule_name": rule["name"], "description": rule["description"], "automatic_status": status, "conclusion": status, "reason": reason, "evidence": evidences})
+    if llm_fallback is not None:
+        candidates = [rule for rule, result in zip(rules, output)
+                      if rule.get("llm_fallback") is True and not result["evidence"]]
+        if candidates:
+            try:
+                assessments = llm_fallback(text, candidates)
+                if not isinstance(assessments, dict):
+                    raise ValueError("invalid LLM result")
+                for rule, result in zip(rules, output):
+                    if rule not in candidates:
+                        continue
+                    assessment = assessments.get(rule["id"])
+                    if not isinstance(assessment, dict) or assessment.get("suggested_status") not in {"通过", "风险", "需人工确认"}:
+                        continue
+                    quote = assessment.get("evidence_quote", "")
+                    if not isinstance(quote, str) or quote not in text:
+                        quote = ""
+                    evidence = []
+                    if quote:
+                        offset = 0
+                        while True:
+                            start = text.find(quote, offset)
+                            if start < 0:
+                                break
+                            evidence.append({"text": text[start:start + len(quote)], "start": start, "end": start + len(quote)})
+                            offset = start + max(1, len(quote))
+                    result["automatic_status"] = "需人工确认"
+                    result["conclusion"] = "需人工确认"
+                    result["llm_assessment"] = {
+                        "label": "AI 判断，需人工复核",
+                        "suggested_status": assessment["suggested_status"],
+                        "reason": assessment.get("reason", ""),
+                    }
+                    result["evidence"] = evidence
+                    result["reason"] = "AI 判断建议“" + assessment["suggested_status"] + "”，需人工复核；" + assessment.get("reason", "")
+                    if not evidence:
+                        result["reason"] += "；没有与原文精确匹配的证据片段"
+            except Exception:
+                for rule, result in zip(rules, output):
+                    if rule in candidates:
+                        result["llm_error"] = "AI 兜底暂不可用，仍需人工确认"
+                        result["reason"] += "；AI 兜底暂不可用，仍需人工确认"
     return output

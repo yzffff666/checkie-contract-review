@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from .engine import review_text
+from .llm_fallback import assess_with_deepseek, configured_model, is_configured
 
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = Path(os.environ.get("CONTRACT_DB", ROOT / "data" / "reviews.sqlite3"))
@@ -47,6 +48,7 @@ initialize()
 class ReviewRequest(BaseModel):
     text: str
     filename: str = "contract.txt"
+    use_llm: bool = False
 
 
 class PatchRequest(BaseModel):
@@ -71,7 +73,8 @@ def fetch_review(db, review_id):
 @app.post("/review")
 def create_review(payload: ReviewRequest):
     try:
-        results = review_text(payload.text)
+        fallback = assess_with_deepseek if payload.use_llm else None
+        results = review_text(payload.text, llm_fallback=fallback)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     review_id = str(uuid.uuid4())
@@ -80,6 +83,11 @@ def create_review(payload: ReviewRequest):
         db.execute("INSERT INTO reviews VALUES (?, ?, ?, ?, ?)", (review_id, payload.filename or "contract.txt", payload.text, reviewed_at, json.dumps(results, ensure_ascii=False)))
     with connect() as db:
         return fetch_review(db, review_id)
+
+
+@app.get("/capabilities")
+def capabilities():
+    return {"llm_available": is_configured(), "llm_model": configured_model() if is_configured() else None}
 
 
 @app.get("/reviews/{review_id}")

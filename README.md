@@ -1,6 +1,6 @@
 # 合同初审工具
 
-基于 FastAPI、SQLite、React 和 Vite 的本地合同初审演示项目。只接受 UTF-8 TXT 文本；规则使用 `backend/rules.json` 配置，不调用 LLM 或外部 API。
+基于 FastAPI、SQLite、React 和 Vite 的本地合同初审演示项目。只接受 UTF-8 TXT 文本；规则使用 `backend/rules.json` 配置，默认只运行关键词和正则规则。
 
 ## 环境与启动
 
@@ -22,6 +22,22 @@ cd frontend && npm run dev
 ```
 
 浏览器打开 <http://localhost:5173>。SQLite 数据库默认位于 `data/reviews.sqlite3`，也可用 `CONTRACT_DB` 指定路径。FastAPI 文档在 <http://localhost:8000/docs>。
+
+## Docker 一键启动
+
+需要 Docker Desktop（含 Compose）。在项目根目录运行：
+
+```bash
+docker compose up --build
+```
+
+浏览器打开 <http://localhost:8080>。SQLite 文件保存在 Compose 命名卷 `contract-data` 中。服务只绑定本机回环地址。停止运行用 `docker compose down`；删除持久化审查记录时再执行 `docker compose down -v`。
+
+## 可选 DeepSeek 语义兜底
+
+只有在页面勾选“启用 DeepSeek 语义兜底”后，未命中且在规则 JSON 中设置了 `"llm_fallback": true` 的规则才会请求模型。每次将整份合同文本和待判断的规则描述发送到 DeepSeek；请勿对未经授权外发的合同启用此选项。模型建议永远显示为“AI 判断，需人工复核”，最终结论仍须由审核人修改。证据只有在模型返回的引用与原文精确匹配时才会展示。
+
+配置时先创建一个新的 API Key（不要使用已粘贴到聊天中的旧 Key），复制 `.env.example` 为 `.env`，将新 Key 放入 `DEEPSEEK_API_KEY`。`.env` 已加入 `.gitignore`；密钥不会写进前端、数据库、审计或报告。开发模式需在启动 FastAPI 前导出 `DEEPSEEK_API_KEY`；Docker Compose 会从 `.env` 读取。默认模型为 `deepseek-flash`，可通过 `DEEPSEEK_MODEL` 选择 `deepseek-v4-pro`。没有配置 Key 时，核心功能照常运行，LLM 兜底显示为不可用。
 
 ## 使用与样例
 
@@ -45,11 +61,12 @@ cd frontend && npm run build
 
 ## API
 
-- `POST /review`：JSON `{ "text": "...", "filename": "contract.txt" }`，创建并保存审查。
+- `POST /review`：JSON `{ "text": "...", "filename": "contract.txt", "use_llm": false }`，创建并保存审查；`use_llm` 默认关闭。
+- `GET /capabilities`：返回 LLM 是否已配置和模型名称，不返回 API Key。
 - `GET /reviews/{review_id}`：读取原文、最新结论和审计。
 - `PATCH /reviews/{review_id}/rules/{rule_id}`：JSON `{ "actor": "审核人姓名", "conclusion": "风险" }`；结论接受通过/风险/不适用。旧值由服务端读取，同值提交不会写审计。
 - `POST /report`：JSON `{ "review_id": "...", "format": "markdown" }` 或 `json`，以附件下载。
 
 ## 限制
 
-这是规则匹配演示，不构成法律意见；表达方式复杂或规则未命中的条款需人工判断。姓名为审核人在页面自行填写的自报身份，不是登录认证。暂不支持 PDF/Word、扫描件 OCR、多用户权限或 LLM 语义判断。
+这是规则匹配演示，不构成法律意见；表达方式复杂或规则未命中的条款需人工判断。姓名为审核人在页面自行填写的自报身份，不是登录认证。暂不支持 PDF/Word、扫描件 OCR 或多用户权限。LLM 兜底需要联网、有效的 DeepSeek API Key，并可能产生费用。

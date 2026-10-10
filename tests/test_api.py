@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -54,6 +56,19 @@ class PersistenceTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as bad_format:
             api.export_report(api.ReportRequest(review_id=self.review["review_id"], format="pdf"))
         self.assertEqual(bad_format.exception.status_code, 422)
+
+    def test_llm_fallback_without_key_degrades_to_manual_review(self):
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": ""}):
+            result = api.create_review(api.ReviewRequest(text="本合同经双方签署后生效。", use_llm=True))
+        missing = next(item for item in result["results"] if item["rule_id"] == "payment_deadline")
+        self.assertEqual(missing["conclusion"], "需人工确认")
+        self.assertIn("AI 兜底暂不可用", missing["reason"])
+
+    def test_capabilities_never_exposes_api_key(self):
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-only-secret"}):
+            result = api.capabilities()
+        self.assertTrue(result["llm_available"])
+        self.assertNotIn("test-only-secret", json.dumps(result))
 
 
 if __name__ == "__main__":

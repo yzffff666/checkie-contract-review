@@ -1,0 +1,6 @@
+[
+  {"id":"penalty_ratio","name":"违约金比例","description":"检查明确约定的违约金比例，超过30%为风险。","operator":"regex","config":{"pattern":"(?:逾期违约金|违约金|违约责任)(?:比例)?\\s*(?:为|按|不超过|超过|不得超过)\\s*(?:合同(?:总价|金额)(?:的)?|总价的|金额的)?\\s*(\\d+(?:\\.\\d+)?)\\s*%","capture_group":1,"compare":{"operator":"gt","value":30},"evidence_group":0},"on_match":"通过","on_no_match":"需人工确认","on_condition_true":"风险","on_condition_false":"通过"},
+  {"id":"ip_ownership","name":"知识产权归属","description":"检查是否明确约定知识产权归属甲方或乙方。","operator":"keyword","config":{"keywords":["知识产权归甲方所有","知识产权归乙方所有"]},"on_match":"通过","on_no_match":"需人工确认"},
+  {"id":"payment_deadline","name":"付款期限","description":"检查是否明确约定付款时间。","operator":"regex","config":{"pattern":"(?:收到发票|收到发票之日|验收合格后|交付后)[^。；;\\n]{0,30}?(?:[0-9一二三四五六七八九十百]+\\s*(?:个)?工作日|[0-9一二三四五六七八九十百]+日)内(?:支付|付款)","evidence_group":0},"on_match":"通过","on_no_match":"需人工确认"},
+  {"id":"confidentiality","name":"保密义务","description":"检查是否明确约定保密义务。","operator":"keyword","config":{"keywords":["承担保密义务","不得向第三方披露","负有保密义务"]},"on_match":"通过","on_no_match":"需人工确认"}
+]
